@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 📋 Prasyarat Sistem (Prerequisites)
 Pastikan perangkat Anda sudah terinstal:
 
@@ -32,3 +33,6 @@ Buka jendela CMD/Terminal baru, masuk ke folder proyek lagi, lalu ketik:
 Aplikasi sekarang 100% siap digunakan! Buka browser dan akses:
 
 🔗 http://127.0.0.1:8000
+=======
+# asuransi
+>>>>>>> 2013ff5f976c0f7e51975e948d9fa334eeeae04b
