@@ -1,40 +1,31 @@
 <?php
 
+use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\CustomerController;
-use App\Http\Controllers\TransaksiController;
+use Inertia\Inertia;
 
 /*
 |--------------------------------------------------------------------------
 | Web Routes
 |--------------------------------------------------------------------------
+|
+| Here is where you can register web routes for your application. These
+| routes are loaded by the RouteServiceProvider within a group which
+| contains the "web" middleware group. Now create something great!
+|
 */
 
-// Sederhanakan halaman utama agar langsung mengarah ke list data pelanggan setelah login
-Route::get('/', [CustomerController::class, 'getCustomers'])->middleware(['auth'])->name('dashboard');
-Route::get('/dashboard', [CustomerController::class, 'getCustomers'])->middleware(['auth'])->name('dashboard');
-
-// Grup Rute yang membutuhkan Login (Auth)
-Route::middleware(['auth'])->group(function () {
-    
-    // === CRUD CUSTOMER ===
-    // Create
-    Route::get('/create-customer', [CustomerController::class, 'createCustomer'])->name('create');
-    Route::post('/insert-customer', [CustomerController::class, 'insertCustomer'])->name('insert');
-
-    // Update
-    Route::get('/update-customer/{customer_id}', [CustomerController::class, 'showFormUpdate'])->name('update');
-    Route::patch('/save-customer/{customer_id}', [CustomerController::class, 'updateCustomer'])->name('save');
-
-    // Delete
-    Route::delete('/delete-customer/{customer_id}', [CustomerController::class, 'deleteCustomer'])->name('delete');
-
-
-    // === CRUD TRANSAKSI (BARU) ===
-    Route::get('/transaksi', [TransaksiController::class, 'index'])->name('transaksi.index');
-    Route::post('/transaksi/insert', [TransaksiController::class, 'insert'])->name('transaksi.insert');
-    Route::delete('/transaksi/delete/{id}', [TransaksiController::class, 'delete'])->name('transaksi.delete');
-
+Route::get('/', function () {
+    return Inertia::render('Welcome', [
+        'canLogin' => Route::has('login'),
+        'canRegister' => Route::has('register'),
+        'laravelVersion' => Application::VERSION,
+        'phpVersion' => PHP_VERSION,
+    ]);
 });
+
+Route::get('/dashboard', function () {
+    return Inertia::render('Dashboard');
+})->middleware(['auth', 'verified'])->name('dashboard');
 
 require __DIR__.'/auth.php';
