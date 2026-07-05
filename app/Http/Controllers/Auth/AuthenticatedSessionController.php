@@ -37,7 +37,6 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
-        // Pastikan baris ini mengarah ke HOME (yang sudah kita ubah ke /claims kemarin)
         return redirect()->intended(RouteServiceProvider::HOME);
     }
 
