@@ -13,23 +13,33 @@ class CreateClaimsAndLogsTable extends Migration
      */
     public function up()
     {
-        // Tabel Klaim
         Schema::create('claims', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
-            $table->string('title');
-            $table->text('description');
-            $table->decimal('amount', 12, 2);
-            // Menggunakan enum untuk membatasi status sesuai lifecycle
+
+            // Kolom Formulir Baru dari User
+            $table->string('nama_lengkap');
+            $table->text('alamat');
+            $table->string('no_telepon');
+            $table->string('email_kontak');
+            $table->string('tempat_lahir');
+            $table->date('tanggal_lahir');
+            $table->string('perencanaan_hidup'); // (Jiwa / Kesehatan / Kendaraan)
+            $table->decimal('nominal_asuransi', 15, 2);
+            $table->integer('tinggi_badan');
+            $table->integer('berat_badan');
+            $table->text('masalah_kesehatan')->nullable();
+            $table->decimal('total_asuransi_jiwa', 15, 2);
+
+            // Status Lifecycle
             $table->enum('status', ['draft', 'submitted', 'reviewed', 'approved', 'rejected'])->default('draft');
             $table->timestamps();
         });
 
-        // Tabel Log Aktivitas (Requirement 1.2.3)
         Schema::create('claim_logs', function (Blueprint $table) {
             $table->id();
             $table->foreignId('claim_id')->constrained()->onDelete('cascade');
-            $table->foreignId('user_id')->constrained(); // Siapa yang mengubah
+            $table->foreignId('user_id')->constrained();
             $table->string('from_status');
             $table->string('to_status');
             $table->text('note')->nullable();

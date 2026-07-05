@@ -20,17 +20,19 @@ createInertiaApp({
     title: (title) => `${title} - ${appName}`,
     resolve: (name) => resolvePageComponent(`./Pages/${name}.vue`, import.meta.glob('./Pages/**/*.vue')),
     setup({ el, app, props, plugin }) {
-        // Membuat instance Pinia
         const pinia = createPinia();
 
         return createApp({ render: () => h(app, props) })
             .use(plugin)
             .use(ZiggyVue, Ziggy)
-            .use(pinia) // Menggunakan Pinia
+            .use(pinia)
             .use(PrimeVue, {
-                // Mengonfigurasi PrimeVue agar menggunakan tema Aura (Kompatibel dengan Tailwind)
+                // UBAH BAGIAN INI: Gunakan theme hanya untuk komponen PrimeVue saja, jangan timpa elemen global
                 theme: {
-                    preset: Aura
+                    preset: Aura,
+                    options: {
+                        darkModeSelector: '.pure-dark-mode-none', // Menggagalkan pemaksaan dark mode pada elemen HTML biasa
+                    }
                 }
             })
             .mount(el);
