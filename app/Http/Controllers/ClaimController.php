@@ -6,28 +6,37 @@ use App\Models\Claim;
 use App\Models\ClaimLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class ClaimController extends Controller
 {
     /**
      * Menampilkan daftar klaim berdasarkan Role (Requirement 1.2.2)
+     * HTTP 200: Sukses mengambil data
+     * HTTP 401: Unauthenticated (Ditangani middleware 'auth')
      */
     public function index()
     {
         $user = auth()->user();
+
+        // Pengaman jika user object kosong (HTTP 401)
+        if (!$user) {
+            abort(401, 'Unauthenticated.');
+        }
+
         $query = Claim::with('user');
 
         // RBAC Filter di sisi Backend
         if ($user->role === 'user') {
-            // User hanya boleh melihat klaim milik sendiri
             $query->where('user_id', $user->id);
         } elseif ($user->role === 'verifier') {
-            // Verifier melihat semua klaim yang siap diperiksa
             $query->where('status', 'submitted');
         } elseif ($user->role === 'approver') {
-            // Approver melihat semua klaim yang siap diputuskan
             $query->where('status', 'reviewed');
+        } else {
+            // HTTP 403 Forbidden jika role tidak dikenali sistem
+            abort(403, 'Role tidak valid untuk mengakses data ini.');
         }
 
         return Inertia::render('Claim/Index', [
@@ -37,14 +46,19 @@ class ClaimController extends Controller
 
     /**
      * Menyimpan klaim baru yang dibuat oleh User
+     * HTTP 200/302: Sukses simpan data
+     * HTTP 403: Forbidden jika bukan role 'user'
+     * HTTP 422: Unprocessable Content jika validasi input gagal (Pengganti HTTP 400 di Laravel)
      */
     public function store(Request $request)
     {
+        // 403 Forbidden: Hanya User yang boleh bikin klaim
         if (auth()->user()->role !== 'user') {
-            return redirect()->back()->with('error', 'Hanya User yang dapat membuat klaim.');
+            abort(403, 'Hanya User yang dapat membuat klaim.');
         }
 
-        $request->validate([
+        // Jika validasi gagal, Laravel otomatis melempar HTTP 422 (Unprocessable Content)
+        $validatedData = $request->validate([
             'nama_lengkap' => 'required|string|max:255',
             'alamat' => 'required|string',
             'no_telepon' => 'required|string|max:20',
@@ -59,7 +73,7 @@ class ClaimController extends Controller
             'total_asuransi_jiwa' => 'required|numeric|min:0',
         ]);
 
-        Claim::create(array_merge($request->all(), [
+        Claim::create(array_merge($validatedData, [
             'user_id' => auth()->id(),
             'status' => 'draft'
         ]));
@@ -69,55 +83,60 @@ class ClaimController extends Controller
 
     /**
      * Memperbarui Status Klaim (Strict Lifecycle, RBAC, Anti-Race Condition)
+     * HTTP 404: Not Found jika ID klaim tidak ada
+     * HTTP 422: Kesalahan logika alur/lifecycle klaim (Sama fungsinya seperti HTTP 400 Bad Request)
      */
     public function updateStatus(Request $request, $id)
     {
+        // Validasi struktur input (Mengembalikan HTTP 422 jika gagal)
         $request->validate([
             'target_status' => 'required|in:submitted,reviewed,approved,rejected',
             'note' => 'nullable|string'
         ]);
 
-        $claim = Claim::findOrFail($id);
+        // Mengembalikan HTTP 404 jika ID klaim tidak ditemukan di database
+        $claim = Claim::find($id);
+        if (!$claim) {
+            abort(404, 'Data klaim tidak ditemukan.');
+        }
+
         $user = auth()->user();
+
+        // Menggunakan ValidationException::withMessages agar error logic dilempar dengan kode HTTP 422
+        // Ini adalah cara standar Laravel mengembalikan error 400/422 yang terbaca rapi di Postman & Inertia
 
         // 1. Validasi Aksi untuk ROLE: USER
         if ($user->role === 'user' && $request->target_status !== 'submitted') {
-            return redirect()->back()->withErrors(['error' => 'User hanya dapat mengajukan klaim (submit).']);
+            throw ValidationException::withMessages(['error' => 'User hanya dapat mengajukan klaim (submit).']);
         }
 
         // 2. Validasi Aksi untuk ROLE: VERIFIER
-        // Verifier BOLEH mengubah ke 'reviewed' (lolos) ATAU 'rejected' (tidak lolos)
         if ($user->role === 'verifier' && !in_array($request->target_status, ['reviewed', 'rejected'])) {
-            return redirect()->back()->withErrors(['error' => 'Verifier hanya dapat menandai selesai direview atau menolak verifikasi.']);
+            throw ValidationException::withMessages(['error' => 'Verifier hanya dapat menandai selesai direview atau menolak verifikasi.']);
         }
 
         // 3. Validasi Aksi untuk ROLE: APPROVER
-        // Approver BOLEH mengubah ke 'approved' ATAU 'rejected'
         if ($user->role === 'approver' && !in_array($request->target_status, ['approved', 'rejected'])) {
-            return redirect()->back()->withErrors(['error' => 'Approver hanya dapat menyetujui atau menolak klaim secara final.']);
+            throw ValidationException::withMessages(['error' => 'Approver hanya dapat menyetujui atau menolak klaim secara final.']);
         }
 
         // --- PROTEKSI LIFECYCLE STRICT (Alur Kerja Aman) ---
-        // Jika Verifier ingin memproses, status saat ini harus 'submitted'
         if ($user->role === 'verifier' && $claim->status !== 'submitted') {
-            return redirect()->back()->withErrors(['error' => 'Klaim ini tidak berada dalam tahap verifikasi.']);
+            throw ValidationException::withMessages(['error' => 'Klaim ini tidak berada dalam tahap verifikasi.']);
         }
 
-        // Jika Approver ingin memproses, status saat ini harus 'reviewed'
         if ($user->role === 'approver' && $claim->status !== 'reviewed') {
-            return redirect()->back()->withErrors(['error' => 'Klaim ini belum selesai diverifikasi oleh Verifier.']);
+            throw ValidationException::withMessages(['error' => 'Klaim ini belum selesai diverifikasi oleh Verifier.']);
         }
 
         // Jalankan database transaction (Pessimistic Locking untuk keamanan data)
         DB::transaction(function () use ($claim, $request, $user) {
             $oldStatus = $claim->status;
 
-            // Update status klaim
             $claim->update([
                 'status' => $request->target_status
             ]);
 
-            // Catat riwayat perubahan ke tabel logs
             ClaimLog::create([
                 'claim_id' => $claim->id,
                 'user_id' => $user->id,
@@ -127,17 +146,24 @@ class ClaimController extends Controller
             ]);
         });
 
-        // PENTING: Kembalikan respon redirect Inertia yang valid (Gunakan back() agar halaman otomatis segar)
         return redirect()->back()->with('message', 'Status klaim berhasil diperbarui.');
     }
 
+    /**
+     * Menghapus Draft Klaim
+     * HTTP 404: Jika ID tidak ada
+     * HTTP 403: Forbidden jika mencoba menghapus dokumen orang lain atau status bukan draft
+     */
     public function destroy($id)
     {
-        $claim = Claim::findOrFail($id);
+        $claim = Claim::find($id);
+        if (!$claim) {
+            abort(404, 'Data klaim tidak ditemukan.');
+        }
 
-        // Proteksi: Hanya pemilik data (user) dan hanya jika berstatus 'draft' yang boleh menghapus
+        // Proteksi Hak Akses (Mengembalikan HTTP 403)
         if (auth()->user()->role !== 'user' || $claim->user_id !== auth()->id() || $claim->status !== 'draft') {
-            return redirect()->back()->withErrors(['error' => 'Anda tidak memiliki akses untuk menghapus data ini.']);
+            abort(403, 'Anda tidak memiliki akses untuk menghapus data ini atau status data bukan draft.');
         }
 
         $claim->delete();
